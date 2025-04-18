@@ -7,6 +7,7 @@ __pycache__/
 venv/
 env/
 .bot_venv/
+bot_venv/
 .bot_env/
 *.egg-info/
 

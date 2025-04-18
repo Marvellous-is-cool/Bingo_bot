@@ -700,7 +700,7 @@ class Bot(BaseBot):
         f"Welcome boss! The BINGO BUOY reporting here..... I am your special bot made by you. We have gathered here today to play what? BINGO!!!!!!!!!!!!!")
     
     
-    if user.username == "User_taken2":
+    elif user.username == "User_taken2":
       await self.highrise.react("wave", user.id)
       await self.highrise.chat(
         f"Apologies, i have to acknoledge the Mamacita! It's the beauty's arrival!.  Welcome, Beauty!")
