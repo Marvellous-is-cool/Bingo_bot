@@ -35,7 +35,8 @@ def is_within_distance(user_pos, bot, bot_pos=None):
         return False
     dx = abs(ux - bx)
     dz = abs(uz - bz)
-    return (dx <= 10 and dz <= 10)
+    # Increase horizontal difference as far as possible (no limit)
+    return True  # Always allow horizontally, only restrict by vertical
 
 async def play_bingo(bot, user_id, message):
     global recording, owner_id, players, player_labels, player_revs, celebrating, pinged_players
@@ -46,23 +47,28 @@ async def play_bingo(bot, user_id, message):
 
     # Only record if recording is True and message is "hi, playing"
     if recording and message.lower().strip() == "hi, playing":
-        # Get user object and position
         room_users_resp = await bot.highrise.get_room_users()
-        # FIX: Use correct import for GetRoomUsersRequest
         if isinstance(room_users_resp, GetRoomUsersRequest.GetRoomUsersResponse):
             for room_user, pos in room_users_resp.content:
                 if room_user.id == user_id:
                     # Check distance from bot
                     if is_within_distance(pos, bot):
+                        # Only add if not already in players and less than 18
                         if user_id not in [u.id for u in players] and len(players) < 18:
                             players.append(room_user)
                             player_revs[user_id] = 5
+                            # Confirm join to user and log for debug
                             await bot.highrise.send_whisper(user_id, "You have joined the bingo game!")
+                            print(f"[BINGO] Added player: {room_user.username} ({user_id})")
                         else:
                             await bot.highrise.send_whisper(user_id, "Already joined or max players reached.")
+                            print(f"[BINGO] Player already joined or max reached: {room_user.username} ({user_id})")
                     else:
                         await bot.highrise.send_whisper(user_id, "You are too far from the bot to join.")
+                        print(f"[BINGO] Player too far: {room_user.username} ({user_id})")
                     break
+        # Debug: print current player list
+        print(f"[BINGO] Current players: {[u.username for u in players]}")
 
     # Owner starts the game
     if user_id == owner_id and message.lower().strip() == "!play":
