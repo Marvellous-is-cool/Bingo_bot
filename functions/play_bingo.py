@@ -58,7 +58,8 @@ async def play_bingo(bot, user_id, message):
                             players.append(room_user)
                             player_revs[user_id] = 5
                             # Confirm join to user and log for debug
-                            await bot.highrise.send_whisper(user_id, "You have joined the bingo game!")
+                            await bot.highrise.send_whisper(user_id, "You have joined the bingo game!") 
+                            
                             print(f"[BINGO] Added player: {room_user.username} ({user_id})")
                         else:
                             await bot.highrise.send_whisper(user_id, "Already joined or max players reached.")
