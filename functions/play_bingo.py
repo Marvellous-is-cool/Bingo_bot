@@ -17,11 +17,24 @@ owner_id = None
 pinged_players = set()
 
 # Utility: Distance check
-def is_within_distance(user_pos, bot_pos):
-    if abs(user_pos.y - bot_pos.y) > 10:
+def is_within_distance(user_pos, bot, bot_pos=None):
+    # Use bot.get_bot_position() if bot_pos is not provided
+    if bot_pos is None:
+        bot_pos = bot.get_bot_position()
+    def get_xyz(pos):
+        # Position: has x, y, z
+        # AnchorPosition: has anchor, x, z (no y)
+        if hasattr(pos, "y"):
+            return pos.x, pos.y, pos.z
+        else:
+            # Treat AnchorPosition as y=0 for comparison
+            return pos.x, 0, pos.z
+    ux, uy, uz = get_xyz(user_pos)
+    bx, by, bz = get_xyz(bot_pos)
+    if abs(uy - by) > 10:
         return False
-    dx = abs(user_pos.x - bot_pos.x)
-    dz = abs(user_pos.z - bot_pos.z)
+    dx = abs(ux - bx)
+    dz = abs(uz - bz)
     return (dx <= 10 and dz <= 10)
 
 async def play_bingo(bot, user_id, message):
@@ -40,8 +53,7 @@ async def play_bingo(bot, user_id, message):
             for room_user, pos in room_users_resp.content:
                 if room_user.id == user_id:
                     # Check distance from bot
-                    bot_pos = bot.get_bot_position()
-                    if is_within_distance(pos, bot_pos):
+                    if is_within_distance(pos, bot):
                         if user_id not in [u.id for u in players] and len(players) < 18:
                             players.append(room_user)
                             player_revs[user_id] = 5
