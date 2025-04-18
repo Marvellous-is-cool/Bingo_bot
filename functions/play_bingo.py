@@ -35,7 +35,8 @@ async def play_bingo(bot, user_id, message):
     if recording and message.lower().strip() == "hi, playing":
         # Get user object and position
         room_users_resp = await bot.highrise.get_room_users()
-        if isinstance(room_users_resp, bot.highrise.GetRoomUsersRequest.GetRoomUsersResponse):
+        # FIX: Use correct import for GetRoomUsersRequest
+        if isinstance(room_users_resp, GetRoomUsersRequest.GetRoomUsersResponse):
             for room_user, pos in room_users_resp.content:
                 if room_user.id == user_id:
                     # Check distance from bot

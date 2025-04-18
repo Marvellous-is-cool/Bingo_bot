@@ -102,41 +102,56 @@ async def announce(self: BaseBot, user_id: str, message: str) -> None:
             await self.highrise.chat("Invalid interval. Use '!announce set <interval>' to set the dice interval.")
         return
     
-    # 3 Dice call: Single dice   
-    match_dice = re.match(r"!announce dice\s+([\d\sand]+)(?:\s+([yn]))?$", lower_msg)
+    # 3 Dice call: Restrict !announce dice to only single dice
+    match_dice = re.match(r"!announce dice\s+(\d+)$", lower_msg)
     if match_dice:
-        raw = match_dice.group(1)
-        order_flag = match_dice.group(2)
-        dice_values = list(map(int, re.findall(r'\d+', raw)))
-        ordered = order_flag == 'y'
-        
-        if not all(1 <= val <= 6 for val in dice_values):
-            await self.highrise.chat("Waiting for the boss to announce the dice...")
+        dice_val = int(match_dice.group(1))
+        if not (1 <= dice_val <= 6):
+            await self.highrise.chat("Dice must be between 1 and 6.")
             return
-        
+
         # cancel any previous task
         if self.dice_task and not self.dice_task.done():
             self.dice_task.cancel()
-              
-        # interval lopp
+
         async def roll_dice_sequence():
             try:
-                for i, val in enumerate(dice_values):
-                    await self.highrise.chat(f"🎲 Official Dice{'s' if len(dice_values) > 1 else ''} Rolled: **{val}**")
-                    if i < len(dice_values) - 1:
-                        await asyncio.sleep(getattr(self,"dice_interval", 3))
-                        
-                if len(dice_values) > 1:
-                    order_text = "in order" if ordered else "not in order"
-                    await self.highrise.chat(f"🎲 Official Dices Rolled: **{dice_values}** ({order_text})")
+                await self.highrise.chat(f"🎲 Official Dice Rolled: **{dice_val}**")
             except asyncio.CancelledError:
                 await self.highrise.chat("⏱️ Announce task cancelled.")
                 return
-                
-            
-        # start new task
+
+        self.dice_task = asyncio.create_task(roll_dice_sequence())
+        return
+
+    # 3 Dice call: Only allow two dice for !announce dices
+    match_dices = re.match(r"!announce dices\s+(\d+)\s+(\d+)(?:\s+([yn]))?$", lower_msg)
+    if match_dices:
+        dice1 = int(match_dices.group(1))
+        dice2 = int(match_dices.group(2))
+        order_flag = match_dices.group(3)
+        ordered = order_flag == 'y'
+
+        # Validate dice values
+        if not (1 <= dice1 <= 6 and 1 <= dice2 <= 6):
+            await self.highrise.chat("Both dice must be between 1 and 6.")
+            return
+
+        # cancel any previous task
+        if self.dice_task and not self.dice_task.done():
+            self.dice_task.cancel()
+
+        async def roll_dice_sequence():
+            try:
+                await self.highrise.chat(f"🎲 Official Dices Rolled: **{dice1}** and **{dice2}**")
+                await asyncio.sleep(getattr(self, "dice_interval", 3))
+                order_text = "in order" if ordered else "not in order"
+                await self.highrise.chat(f"🎲 Official Dices: **[{dice1}, {dice2}]** ({order_text})")
+            except asyncio.CancelledError:
+                await self.highrise.chat("⏱️ Announce task cancelled.")
+                return
+
         self.dice_task = asyncio.create_task(roll_dice_sequence())
         return
         
     await self.highrise.send_whisper(user.id, "❌ Couldn't understand your announce command.")
-    
