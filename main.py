@@ -85,207 +85,7 @@ class Bot(BaseBot):
     else:
         await self.highrise.chat("Failed to fetch room users.")
         return
-
-    if lowerMsg.startswith("!door"):
-      await self.highrise.teleport(user_id=user.id,
-                                   dest=Position(float(0), float(0), float(0)))
-
-    if lowerMsg.startswith("!vips"):
-      vipsinstr = ''
-
-      for vip in vip_users:
-        vipsinstr += f"{vip} \n"
-
-      await self.highrise.chat(f"Here are the vips: \n {vipsinstr} ")
-
-    if lowerMsg.startswith("!addvip"):
-      if user.username != "coolbuoy":
-        await self.highrise.chat("You do not have permission to do this")
-        return
-      #separete message into parts
-      parts = message.split()
-      #check if message is valid "kick @username"
-      if len(parts) != 2:
-        await self.highrise.chat(
-            "Invalid add vip command format. use !addvip <username>")
-        return
-      #checks if there's a @ in the message
-      if "@" not in parts[1]:
-        username = parts[1]
-      else:
-        username = parts[1][1:]
-      #add user to vip
-      try:
-        vip_users.append(username)
-        await self.highrise.chat(
-            f"{username} has been added to one of the vips")
-      except Exception as e:
-        await self.highrise.chat(f"{e}")
-        return
-        #send message to chat
-        await self.highrise.chat(
-            f"{username} has been added to one of the vips")
-
-    # --- Improved VIP teleport logic ---
-    if lowerMsg.startswith("!teleport"):
-      is_vip = user.id == self.owner_id or user.username == "coolbuoy" or user.username in vip_users
-      if not is_vip:
-        await self.highrise.chat(
-            f"You are not a VIP. Only VIPs are authorized to use the teleporter."
-        )
-        return
-      try:
-        command, username, coordinate = lowerMsg.split(" ")
-      except:
-        await self.highrise.chat(
-            "Incorrect format, please use !teleport <username> <x,y,z>")
-        return
-      response = await self.highrise.get_room_users()
-      if isinstance(response, GetRoomUsersRequest.GetRoomUsersResponse):
-        room_users = response.content
-      else:
-        await self.highrise.chat("Failed to fetch room users.")
-        return
-      user_id = None
-      for room_user, pos in room_users:
-        if room_user.username.lower() == username.lower():
-          user_id = room_user.id
-          break
-      if user_id is None:
-        await self.highrise.chat(
-            "User not found, please specify a valid user and coordinate")
-        return
-      try:
-        x, y, z = coordinate.split(",")
-      except:
-        await self.highrise.chat(
-            "Coordinate not found or incorrect format, use x,y,z")
-        return
-      await self.highrise.teleport(user_id=user_id,
-                                   dest=Position(float(x), float(y),
-                                                 float(z)))
-
-    if message.startswith("kick"):
-      if user.username != "coolbuoy":
-        await self.highrise.chat("You do not have permission to do this")
-        return
-      #separete message into parts
-      parts = message.split()
-      #check if message is valid "kick @username"
-      if len(parts) != 2:
-        await self.highrise.chat("Invalid kick command format.")
-        return
-      #checks if there's a @ in the message
-      if "@" not in parts[1]:
-        username = parts[1]
-      else:
-        username = parts[1][1:]
-      #check if user is in room
-      response = await self.highrise.get_room_users()
-      if isinstance(response, GetRoomUsersRequest.GetRoomUsersResponse):
-          room_users = response.content
-      else:
-          await self.highrise.chat("Failed to fetch room users.")
-          return
-      user_id = None
-      for room_user, pos in room_users:
-        if room_user.username.lower() == username.lower():
-          user_id = room_user.id
-          break
-      if user_id is None:
-        await self.highrise.chat(
-            "User not found, please specify a valid user and coordinate")
-        return
-      #kick user
-      try:
-        await self.highrise.moderate_room(user_id, "kick")
-      except Exception as e:
-        await self.highrise.chat(f"{e}")
-        return
-        #send message to chat
-        await self.highrise.chat(f"{username} has been kicked out of the room."
-                                 )
-
-    if lowerMsg.startswith("!loop"):
-      try:
-        splited_message = message.split(" ")
-        if len(splited_message) < 2:
-          await self.highrise.chat(
-              "Invalid command format. Usage: !loop <emote_name>")
-        else:
-          emote_name = splited_message[
-              -1]  # Get the last word as the emote name
-          await send_specific_emote_periodically(self, user, emote_name)
-      except Exception as e:
-        await self.highrise.chat(f"Error: {str(e)}")
-
-    if lowerMsg.startswith("stop"):
-      await stop_emote_task(self, user)
-
-    if message.lstrip().startswith(("!fight", "!hug", "!flirt")):
-      response = await self.highrise.get_room_users()
-      if isinstance(response, GetRoomUsersRequest.GetRoomUsersResponse):
-          users = [content[0] for content in response.content]
-      else:
-          await self.highrise.chat("Failed to fetch room users.")
-          return
-      usernames = [user.username.lower() for user in users]
-      parts = message[1:].split()
-      args = parts[1:]
-
-      if len(args) < 1:
-        await self.highrise.send_whisper(user.id,
-                                         f"Usage: !{parts[0]} <@username>")
-        return
-      elif args[0][0] != "@":
-        await self.highrise.send_whisper(
-            user.id, f"Invalid user format. Please use '@username'.")
-        return
-      elif args[0][1:].lower() not in usernames:
-        await self.highrise.send_whisper(user.id,
-                                         f"{args[0][1:]} is not in the room.")
-        return
-
-      user_id = next(
-          (u.id for u in users if u.username.lower() == args[0][1:].lower()),
-          None)
-      if not user_id:
-        await self.highrise.send_whisper(user.id,
-                                         f"User {args[0][1:]} not found")
-        return
-
-      try:
-        if message.startswith("!fight"):
-          await self.highrise.chat(
-              f"\n🥷 @{user.username} And @{args[0][1:]} Fighting Each Other, let's see who breaks a tooth"
-          )
-          await self.highrise.send_emote("emote-swordfight", user.id)
-          await self.highrise.send_emote("emote-swordfight", user_id)
-        elif message.startswith("!hug"):
-          await self.highrise.chat(
-              f"\n🫂 @{user.username} And @{args[0][1:]} Hugging Each Other❤️")
-          await self.highrise.send_emote("emote-hug", user.id)
-          await self.highrise.send_emote("emote-hug", user_id)
-        elif message.startswith("!flirt"):
-          await self.highrise.chat(
-              f"\n Hey @{user.username} And @{args[0][1:]} Flirting Each Other 😏❤️"
-          )
-          await self.highrise.send_emote("emote-lust", user.id)
-          await self.highrise.send_emote("emote-lust", user_id)
-      except Exception as e:
-        await self.highrise.chat(
-            f"An exception occurred[Due To {parts[0][1:]}]: {e}")
-
-    for emotename in emotesava:
-      try:
-        if lowerMsg.startswith(f"{emotename.rsplit('-', 1)[-1]}"):
-          await self.highrise.send_emote(emotename, user.id)
-        if lowerMsg.startswith(f"{emotename.rsplit('-', 1)[-1]} all"):
-          for roomUser, _ in roomUsers:
-            await self.highrise.send_emote(emotename, roomUser.id)
-      except Exception as e:
-        await self.highrise.chat(f"An Error Occured: {e}")
-
+      
     # Add bingo celebration handler
     await play_bingo.handle_bingo_celebration(self, user, message)
 
@@ -713,12 +513,38 @@ class Bot(BaseBot):
       )
 
   async def on_user_leave(self, user: User) -> None:
-    # Remove from bingo if needed
-    await play_bingo.handle_user_leave(self, user)
-    await self.highrise.chat(
-        f"{user.username} left, we hope {user.username} had a good time btw..."
-    )
-
+    try:
+        # Get bot's current position
+        bot_pos = self.get_bot_position()
+        
+        # Get room users to find the leaving user's last position
+        room_users = await self.highrise.get_room_users()
+        user_pos = None
+        
+        # Find the leaving user's position
+        for room_user, pos in room_users.content:
+            if user.id == room_user.id:
+                user_pos = pos
+                break
+        
+        if user_pos and abs(user_pos.y - bot_pos.y) <= 10:
+            # User was at same level (within 10 units vertically)
+            await play_bingo.handle_user_leave(self, user)
+            await self.highrise.chat(
+                f"{user.username} left the bingo level! Hope you had fun playing with us!"
+            )
+        else:
+            # User was at a different level
+            await self.highrise.chat(
+                f"{user.username} left from a different level. Come join us at the bingo level next time!"
+            )
+            
+    except Exception as e:
+        # Fallback message if there's an error
+        await self.highrise.chat(
+            f"{user.username} left the room. See you next time!"
+        )
+        
   async def on_start(self, session_metadata: SessionMetadata) -> None:
     self.bot_id = session_metadata.user_id
     self.owner_id = session_metadata.room_info.owner_id
