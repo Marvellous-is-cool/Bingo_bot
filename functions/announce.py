@@ -153,5 +153,29 @@ async def announce(self: BaseBot, user_id: str, message: str) -> None:
 
         self.dice_task = asyncio.create_task(roll_dice_sequence())
         return
+
+    # Kick functionality for bingo (admin/vip only)
+    match_kick = re.match(r"!announce kick\s+@?(\w+)", lower_msg)
+    if match_kick:
+        username = match_kick.group(1)
+        # Only allow admin/vip
+        if not (user.username == 'coolbuoy' or user.username == 'User_taken2'):
+            await self.highrise.send_whisper(user.id, "Only the admin or vips can kick players from bingo.")
+            return
+
+        # Find user in room
+        room_users = await self.highrise.get_room_users()
+        if isinstance(room_users, GetRoomUsersRequest.GetRoomUsersResponse):
+            target = next((u[0] for u in room_users.content if u[0].username.lower() == username.lower()), None)
+            if not target:
+                await self.highrise.send_whisper(user.id, f"User @{username} not found in the room.")
+                return
+            # Kick from room
+            try:
+                await self.highrise.moderate_room(target.id, "kick")
+                await self.highrise.chat(f"@{username} has been kicked from the room by {user.username}.")
+            except Exception as e:
+                await self.highrise.send_whisper(user.id, f"Failed to kick @{username}: {e}")
+        return
         
     await self.highrise.send_whisper(user.id, "❌ Couldn't understand your announce command.")

@@ -551,8 +551,15 @@ class Bot(BaseBot):
     if self.bot_status:
       await self.place_bot()
     self.bot_status = True
-    
-    await self.highrise.chat("Who is ready for a round of bingo! 🎲🤣")
+
+    # Avoid crashing if muted: catch and log mute error, do not raise
+    try:
+      await self.highrise.chat("Who is ready for a round of bingo! 🎲🤣")
+    except Exception as e:
+      if "muted" in str(e).lower():
+        print(f"[WARN] Bot is muted and cannot chat: {e}")
+      else:
+        raise
     print("started...")
 
   # Return the top 10 tippers
