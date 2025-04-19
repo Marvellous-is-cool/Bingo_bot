@@ -6,7 +6,7 @@ import traceback
 import time
 from dotenv import load_dotenv
 from main import Bot
-from highrise.__main__ import main
+from highrise.__main__ import main, BotDefinition
 from asyncio import run as arun
 
 # Set up logging
@@ -24,39 +24,38 @@ class BotRunner:
             logger.error("Missing ROOM_ID or BOT_TOKEN in environment variables")
             sys.exit(1)
             
-        from highrise.__main__ import BotDefinition
+        self.create_bot_instance()
+        
+    def create_bot_instance(self):
         self.bot = Bot()
-        self.definitions = [BotDefinition(self.bot, self.room_id, self.api_key)]
-        self.reconnect_attempts = 0
-        self.max_reconnect_attempts = 10
-        self.restart_delay = 5  # seconds
+        self.bot_definition = BotDefinition(self.bot, self.room_id, self.api_key)
         
     async def run_with_reconnect(self):
-        from connection_helper import with_retry
         try:
-            await with_retry(main, self.definitions, max_retries=5)
+            # Pass a list containing the single BotDefinition object
+            await main([self.bot_definition])
         except Exception as e:
             logger.error(f"Bot connection error: {e}")
             await self.handle_reconnect()
     
     async def handle_reconnect(self):
         """Handle reconnection logic with exponential backoff"""
-        self.reconnect_attempts += 1
+        self.reconnect_attempts = getattr(self, 'reconnect_attempts', 0) + 1
+        max_attempts = getattr(self, 'max_reconnect_attempts', 10)
         
-        if self.reconnect_attempts > self.max_reconnect_attempts:
-            logger.critical(f"Exceeded maximum reconnection attempts ({self.max_reconnect_attempts}). Giving up.")
+        if self.reconnect_attempts > max_attempts:
+            logger.critical(f"Exceeded maximum reconnection attempts ({max_attempts}). Giving up.")
             return
             
         # Calculate backoff time (exponential with jitter)
         delay = min(30, (2 ** self.reconnect_attempts) + (time.time() % 1))
-        logger.info(f"Attempting to reconnect in {delay:.2f} seconds (attempt {self.reconnect_attempts}/{self.max_reconnect_attempts})")
+        logger.info(f"Attempting to reconnect in {delay:.2f} seconds (attempt {self.reconnect_attempts}/{max_attempts})")
         
         await asyncio.sleep(delay)
         logger.info("Reconnecting...")
         
         # Create a fresh bot instance to avoid stale connection state
-        self.bot = Bot()
-        self.definitions = [BotDefinition(self.bot, self.room_id, self.api_key)]
+        self.create_bot_instance()
         
         # Try running again
         await self.run_with_reconnect()
