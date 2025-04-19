@@ -38,7 +38,9 @@ async def announce(self: BaseBot, user_id: str, message: str) -> None:
             "**🎯 BINGO RULES:**",
             "- Host will roll dice with `!announce dice ...` \n - Match numbers in the correct order unless told otherwise \n - Revs is 5g per person and you have 5 revs each",
             "- The overall team wins the prize 🏆 \n - Once the number is called, start rolling till you get the number \n - Once you get the dice, both of you will say Bingo with your favorite emoji",
-            "- The emoji must be the same and must not change throughout the game 🏆"
+            "- The emoji must be the same and must not change throughout the game 🏆",
+            "Players/teams are not to chat in the room during the game \n - If you do, you will be disqualified from the game after 5 warnings \n - No exceptions",
+            "Please communicate only in English and no other language during the game \n - If you do, you will be disqualified from the game after 5 warnings \n - No exceptions",
         ],
         "!announce reg": [
             "**🎲 HOW TO JOIN BINGO:**",

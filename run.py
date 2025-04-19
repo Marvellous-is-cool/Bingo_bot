@@ -1,65 +1,77 @@
-# You can run main.py directly for development:
-#   python main.py
-# This will start the bot without the Flask keep-alive server.
-# For production or Replit-style keep-alive, use this run.py file.
-
-from flask import Flask
-from threading import Thread
-from highrise.__main__ import *
-import time
 import os
-from dotenv import load_dotenv
+import sys
+import asyncio
+import logging
 import traceback
+import time
+from dotenv import load_dotenv
+from main import Bot
+from highrise.__main__ import main
+from asyncio import run as arun
 
-# Load environment variables from .env file
-load_dotenv()
+# Set up logging
+logging.basicConfig(level=logging.INFO, 
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('highrise_bot_runner')
 
-class WebServer():
-  def __init__(self):
-    self.app = Flask(__name__)
-
-    @self.app.route('/')
-    def index() -> str:
-      return "Alive"
-
-  def run(self) -> None:
-    port = int(os.getenv('PORT', 8081))  # Default to 8080 if not set
-    self.app.run(
-      host='0.0.0.0',
-      port=port,
-      debug=False,         # Disable debug mode in thread
-      use_reloader=False   # Disable reloader in thread
-    )
-
-  def keep_alive(self):
-    t = Thread(target=self.run)
-    t.start()
-    RunBot().run_loop()
-
-
-class RunBot():
-  def __init__(self) -> None:
-    self.room_id = os.getenv('ROOM_ID', 'default_room_id')  # Provide a default value
-    self.bot_token = os.getenv('BOT_TOKEN', 'default_bot_token')  # Provide a default value
-    self.bot_file = "main"
-    self.bot_class = "Bot"
-
-    self.definitions = [
-        BotDefinition(
-            getattr(import_module(self.bot_file), self.bot_class)(),
-            self.room_id, self.bot_token)
-    ]  # More BotDefinition classes can be added to the definitions list
-
-  def run_loop(self) -> None:
-    while True:
-      try:
-        arun(main(self.definitions))
-
-      except Exception as e:
-        print("Error: ", e)
-        traceback.print_exc()
-        time.sleep(5)
-
-
+class BotRunner:
+    def __init__(self):
+        load_dotenv()
+        self.room_id = os.getenv("ROOM_ID")
+        self.api_key = os.getenv("BOT_TOKEN")
+        
+        if not self.room_id or not self.api_key:
+            logger.error("Missing ROOM_ID or BOT_TOKEN in environment variables")
+            sys.exit(1)
+            
+        from highrise.__main__ import BotDefinition
+        self.bot = Bot()
+        self.definitions = [BotDefinition(self.bot, self.room_id, self.api_key)]
+        self.reconnect_attempts = 0
+        self.max_reconnect_attempts = 10
+        self.restart_delay = 5  # seconds
+        
+    async def run_with_reconnect(self):
+        from connection_helper import with_retry
+        try:
+            await with_retry(main, self.definitions, max_retries=5)
+        except Exception as e:
+            logger.error(f"Bot connection error: {e}")
+            await self.handle_reconnect()
+    
+    async def handle_reconnect(self):
+        """Handle reconnection logic with exponential backoff"""
+        self.reconnect_attempts += 1
+        
+        if self.reconnect_attempts > self.max_reconnect_attempts:
+            logger.critical(f"Exceeded maximum reconnection attempts ({self.max_reconnect_attempts}). Giving up.")
+            return
+            
+        # Calculate backoff time (exponential with jitter)
+        delay = min(30, (2 ** self.reconnect_attempts) + (time.time() % 1))
+        logger.info(f"Attempting to reconnect in {delay:.2f} seconds (attempt {self.reconnect_attempts}/{self.max_reconnect_attempts})")
+        
+        await asyncio.sleep(delay)
+        logger.info("Reconnecting...")
+        
+        # Create a fresh bot instance to avoid stale connection state
+        self.bot = Bot()
+        self.definitions = [BotDefinition(self.bot, self.room_id, self.api_key)]
+        
+        # Try running again
+        await self.run_with_reconnect()
+        
+    def run_loop(self):
+        """Main entry point for the bot runner"""
+        logger.info(f"Starting bot in room {self.room_id}")
+        try:
+            arun(self.run_with_reconnect())
+        except KeyboardInterrupt:
+            logger.info("Bot shutting down due to keyboard interrupt")
+        except Exception as e:
+            logger.critical(f"Unhandled exception in bot runner: {e}")
+            logger.critical(traceback.format_exc())
+            
 if __name__ == "__main__":
-  WebServer().keep_alive()
+    runner = BotRunner()
+    runner.run_loop()

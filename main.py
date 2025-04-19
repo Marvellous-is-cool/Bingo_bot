@@ -75,19 +75,29 @@ class Bot(BaseBot):
     if response:
         await self.highrise.chat("Room users fetched successfully.")
     lowerMsg = message.lower()
-    response = await self.highrise.get_room_users()
-    if hasattr(response, 'content'):
-        if isinstance(response, GetRoomUsersRequest.GetRoomUsersResponse):
-            roomUsers = response.content
+    
+    # Add robust error handling for get_room_users call
+    try:
+        response = await self.highrise.get_room_users()
+        if hasattr(response, 'content'):
+            if isinstance(response, GetRoomUsersRequest.GetRoomUsersResponse):
+                roomUsers = response.content
+            else:
+                await self.highrise.chat("Failed to fetch room users.")
+                return
         else:
             await self.highrise.chat("Failed to fetch room users.")
             return
-    else:
-        await self.highrise.chat("Failed to fetch room users.")
-        return
+    except Exception as e:
+        print(f"[ERROR] Failed to get room users: {e}")
+        # Don't crash - we can still handle the message even without room user data
+        roomUsers = []
       
     # Add bingo celebration handler - this now also handles 'gg' and 'rev' commands
-    await play_bingo.handle_bingo_celebration(self, user, message)
+    try:
+        await play_bingo.handle_bingo_celebration(self, user, message)
+    except Exception as e:
+        print(f"[ERROR] Error in bingo celebration: {e}")
 
   async def on_emote(self, user: User, emote_id: str,
                      receiver: User | None) -> None:
@@ -642,9 +652,16 @@ class Bot(BaseBot):
                       pos_data["facing"])
 
   async def run_bot(self, room_id, api_key) -> None:
-    asyncio.create_task(self.place_bot())
-    definitions = [BotDefinition(self, room_id, api_key)]
-    await __main__.main(definitions)
+    from connection_helper import with_retry
+    try:
+        asyncio.create_task(self.place_bot())
+        definitions = [BotDefinition(self, room_id, api_key)]
+        await with_retry(__main__.main, definitions, max_retries=5)
+    except Exception as e:
+        print(f"[CRITICAL] Bot crashed: {e}")
+        # Wait and attempt to restart
+        await asyncio.sleep(5)
+        await self.run_bot(room_id, api_key)
 
 
 # Automatically create json file if not exists

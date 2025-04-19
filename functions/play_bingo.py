@@ -1014,6 +1014,11 @@ async def handle_user_leave(bot, user):
     
     pinged_players.discard(user.id)
     
+    # After cleaning up the player data, check if we have a winner
+    if len(player_labels) + len(teams) == 1:
+        print(f"[BINGO] Only one player/team left after {user.username} left")
+        await declare_winner(bot)
+    
     # Return whether the user was a player so the main bot can use this info
     return user_was_player
 
@@ -1136,6 +1141,7 @@ async def handle_bingo_celebration(bot, user, message):
 async def handle_player_gg(bot, user, label, user_team):
     global player_revs, players, player_labels, ping_tasks, pinged_players
     global teams, emoji_users, player_emojis, team_emojis, auto_ping_task
+    global game_ended
     
     await bot.highrise.chat(f"{user.username} says GG and is out of the game!")
     
@@ -1224,19 +1230,32 @@ async def handle_player_gg(bot, user, label, user_team):
         print(f"Error teleporting player: {e}")
         # Add fallback message if teleportation fails
         await bot.highrise.send_whisper(user.id, "Please hit the spikes in front of you to exit the playing area. Thank you!")
-        
-    # Check if this was the last player/team
-    await check_for_last_players(bot)
     
-    # Check if there's only one player/team left after this removal
-    winner_declared = await check_for_winner(bot)
-    if not winner_declared:
-        # Only send this message if we didn't declare a winner
-        await bot.highrise.chat(f"{user.username} is out (gg).")
+    # IMPORTANT: Check if we have a winner BEFORE checking for last players
+    # This ensures we immediately declare a winner when only one player/team remains
+    print(f"[BINGO] Checking for winner after {user.username} left...")
+    remaining_count = len(player_labels) + len(teams)
+    print(f"[BINGO] Remaining players/teams: {remaining_count}")
+    
+    if remaining_count == 1:
+        # We have a winner! Declare them immediately
+        await declare_winner(bot)
+        return True
+    elif remaining_count == 0:
+        # No players left - game over with no winner
+        await bot.highrise.chat("Game over! No players remaining.")
+        await reset_game()
+        return True
+    
+    # If we didn't find a winner, continue with normal flow
+    await check_for_last_players(bot)
+    return False
 
+# Similar changes to handle_player_rev function
 async def handle_player_rev(bot, user, label, user_team):
     global player_revs, players, player_labels, ping_tasks, pinged_players
     global teams, emoji_users, player_emojis, team_emojis, auto_ping_task
+    global game_ended
     
     if user.id in player_revs and player_revs[user.id] > 0:
         player_revs[user.id] -= 1
@@ -1326,16 +1345,337 @@ async def handle_player_rev(bot, user, label, user_team):
                 # Add fallback message if teleportation fails
                 await bot.highrise.send_whisper(user.id, "Please hit the spikes in front of you to exit the playing area. Thank you!")
             
-            # Check if this was the last player/team
-            await check_for_last_players(bot)
+            # IMPORTANT: Check if we have a winner BEFORE checking for last players
+            print(f"[BINGO] Checking for winner after {user.username} ran out of revs...")
+            remaining_count = len(player_labels) + len(teams)
+            print(f"[BINGO] Remaining players/teams: {remaining_count}")
             
-            # Check if there's only one player/team left after this removal
-            winner_declared = await check_for_winner(bot)
-            if not winner_declared:
-                # Only send this message if we didn't declare a winner
-                await bot.highrise.chat(f"{user.username} is out (no revs left).")
+            if remaining_count == 1:
+                # We have a winner! Declare them immediately
+                await declare_winner(bot)
+                return True
+            elif remaining_count == 0:
+                # No players left - game over with no winner
+                await bot.highrise.chat("Game over! No players remaining.")
+                await reset_game()
+                return True
+            
+            # If we didn't find a winner, continue with normal flow
+            await check_for_last_players(bot)
+            return False
+    
     else:
         await bot.highrise.chat(f"{user.username} has no revs left! Say 'gg' to leave the game.")
+
+# Create a dedicated function for winner declaration
+async def declare_winner(bot):
+    global player_labels, teams, player_emojis, emoji_users, game_ended
+    
+    game_ended = True
+    print("[BINGO] Declaring winner and ending game")
+    
+    # Find the winner
+    if player_labels:
+        winner = next(iter(player_labels.values()))
+        winner_emoji = player_emojis.get(winner.id, "")
+        await bot.highrise.chat(f"🏆 GAME OVER! We have a winner! {winner.username} {winner_emoji} is the last player standing! 🎉")
+        
+        # Send celebration emotes to winner
+        try:
+            for _ in range(3):
+                await bot.highrise.send_emote("emoji-celebrate", winner.id)
+                await asyncio.sleep(1)
+        except Exception as e:
+            print(f"[BINGO] Error sending celebration to winner: {e}")
+            
+    elif teams:
+        team_num = next(iter(teams.keys()))
+        team_members = []
+        team_emoji = ""
+        for uid in teams[team_num]:
+            for user in emoji_users.get(player_emojis.get(uid, ""), []):
+                if user.id == uid:
+                    team_members.append(f"{user.username}")
+                    team_emoji = player_emojis.get(uid, "")
+                    
+                    # Send celebration emotes to team members
+                    try:
+                        for _ in range(3):
+                            await bot.highrise.send_emote("emoji-celebrate", uid)
+                            await asyncio.sleep(1)
+                    except Exception as e:
+                        print(f"[BINGO] Error sending celebration to team member: {e}")
+                        
+        await bot.highrise.chat(f"🏆 GAME OVER! We have winners! Team {team_num} ({' & '.join(team_members)}) {team_emoji} is the last team standing! 🎉")
+    
+    # Since we've already determined the winner, we can reset the game state
+    await bot.highrise.chat("The game has ended. Use !record to start a new game!")
+    await reset_game()
+    return True
+
+# Update check_for_winner to use the declare_winner function
+async def check_for_winner(bot):
+    global players, teams, player_labels, game_ended
+    
+    # If game already ended, don't proceed
+    if game_ended:
+        return False
+    
+    total_players_teams = len(player_labels) + len(teams)
+    print(f"[BINGO] Checking for winner: {total_players_teams} players/teams left")
+    
+    if total_players_teams == 1:
+        return await declare_winner(bot)
+    
+    return False
+
+# Modify on_user_leave to check for winner
+async def handle_user_leave(bot, user):
+    global players, player_labels, player_revs, ping_tasks, pinged_players
+    global teams, emoji_users, player_emojis, team_emojis, auto_ping_task
+    
+    # Check if the user was a player in the game
+    user_was_player = False
+    
+    # Check if user is in individual players
+    if user in players:
+        players.remove(user)
+        user_was_player = True
+    
+    # Check if user is in a team
+    user_team = None
+    for team_num, user_ids in list(teams.items()):
+        if user.id in user_ids:
+            user_team = team_num
+            user_was_player = True
+            
+            # Find the teammate who will become an individual player
+            teammate_id = next((uid for uid in user_ids if uid != user.id), None)
+            
+            if teammate_id:
+                # Find the teammate user object
+                teammate = None
+                user_emoji = player_emojis.get(user.id)
+                if user_emoji and user_emoji in emoji_users:
+                    for u in emoji_users[user_emoji]:
+                        if u.id == teammate_id:
+                            teammate = u
+                            break
+                
+                if teammate:
+                    # Add teammate to individual players
+                    if teammate not in players:
+                        players.append(teammate)
+                    
+                    # Notify the room about team change
+                    await bot.highrise.chat(f"Team {team_num} has been disbanded because {user.username} left. {teammate.username} is now playing individually.")
+            
+            # Remove team
+            del teams[team_num]
+            break
+    
+    # Clean up player_labels entries
+    for label, u in list(player_labels.items()):
+        if u.id == user.id:
+            del player_labels[label]
+            if label in ping_tasks:
+                ping_tasks[label].cancel()
+                del ping_tasks[label]
+    
+    # Clean up emoji_users entries
+    user_emoji = player_emojis.get(user.id)
+    if user_emoji and user_emoji in emoji_users:
+        emoji_users[user_emoji] = [u for u in emoji_users[user_emoji] if u.id != user.id]
+        if not emoji_users[user_emoji]:
+            del emoji_users[user_emoji]
+        elif user_emoji in team_emojis:
+            del team_emojis[user_emoji]
+    
+    # Clean up other player data
+    if user.id in player_emojis:
+        del player_emojis[user.id]
+    if user.id in player_revs:
+        del player_revs[user.id]
+    
+    # Clean up ping tasks for team members
+    if user_team:
+        for i in range(2):  # Check both potential team member task IDs
+            task_label = user_team * 100 + i
+            if task_label in ping_tasks:
+                ping_tasks[task_label].cancel()
+                del ping_tasks[task_label]
+    
+    pinged_players.discard(user.id)
+    
+    # After cleaning up the player data, check if we have a winner
+    if len(player_labels) + len(teams) == 1:
+        print(f"[BINGO] Only one player/team left after {user.username} left")
+        await declare_winner(bot)
+    
+    # Return whether the user was a player so the main bot can use this info
+    return user_was_player
+
+# Modify check_for_last_players to not ping if only one player/team
+async def check_for_last_players(bot):
+    global players, teams, round_bingos, team_round_bingos, auto_ping_task, pinged_players
+    global bingo_timestamps, team_bingo_timestamps, game_ended
+    
+    # If game already ended, don't proceed
+    if game_ended:
+        return
+    
+    # If there's already an auto-ping task running, cancel it
+    if auto_ping_task and not auto_ping_task.done():
+        auto_ping_task.cancel()
+        auto_ping_task = None
+    
+    # Log the current state for debugging
+    print(f"[BINGO AUTO-PING] Checking for last players...")
+    print(f"[BINGO AUTO-PING] Total players: {len(players)}")
+    print(f"[BINGO AUTO-PING] Total teams: {len(teams)}")
+    print(f"[BINGO AUTO-PING] Players who said bingo: {len(round_bingos)}")
+    print(f"[BINGO AUTO-PING] Team bingos: {team_round_bingos}")
+    
+    # Remove any users who are already being manually pinged 
+    # from consideration for auto-pinging
+    active_players = [p for p in players if p.id not in pinged_players]
+    active_teams = {t_num: members for t_num, members in teams.items() 
+                    if not any(uid in pinged_players for uid in members)}
+    
+    # Check individual players who haven't said bingo
+    missing_players = []
+    for player in active_players:
+        if player.id not in round_bingos:
+            missing_players.append(player)
+            print(f"[BINGO AUTO-PING] Player {player.username} hasn't said bingo")
+    
+    # Check teams where not all members have said bingo
+    missing_teams = []
+    for team_num, user_ids in active_teams.items():
+        # Get users who said bingo in this team for this round
+        team_bingos = team_round_bingos.get(team_num, set())
+        
+        # If not all team members said bingo, team is missing
+        if len(team_bingos) < len(user_ids):
+            missing_teams.append(team_num)
+            print(f"[BINGO AUTO-PING] Team {team_num} hasn't fully said bingo. Members said: {team_bingos}")
+    
+    print(f"[BINGO AUTO-PING] Missing players: {len(missing_players)}")
+    print(f"[BINGO AUTO-PING] Missing teams: {len(missing_teams)}")
+    
+    # First check if we only have one player/team total - if so, declare winner
+    total_players_teams = len(player_labels) + len(teams)
+    if total_players_teams == 1:
+        print("[BINGO AUTO-PING] Only one player/team left in game - declaring winner!")
+        await declare_winner(bot)
+        return
+    
+    # If only one player or team left, auto-ping them
+    if len(missing_players) == 1 and len(missing_teams) == 0:
+        # Auto-ping last individual player
+        last_player = missing_players[0]
+        print(f"[BINGO AUTO-PING] Auto-pinging last player: {last_player.username}")
+        await bot.highrise.chat(f"Only {last_player.username} hasn't said bingo! Auto-pinging...")
+        auto_ping_task = asyncio.create_task(auto_ping_player(bot, last_player))
+        
+    elif len(missing_players) == 0 and len(missing_teams) == 1:
+        # Auto-ping last team
+        last_team_num = missing_teams[0]
+        team_members = []
+        team_member_objects = []
+        
+        # Get team members
+        for uid in teams[last_team_num]:
+            for emoji, users in emoji_users.items():
+                for user in users:
+                    if user.id == uid:
+                        team_members.append(user.username)
+                        team_member_objects.append(user)
+                        break
+        
+        print(f"[BINGO AUTO-PING] Auto-pinging last team: {team_members}")
+        await bot.highrise.chat(f"Only Team {last_team_num} ({', '.join(team_members)}) hasn't said bingo! Auto-pinging...")
+        
+        # Start auto-pinging each team member
+        auto_ping_task = asyncio.create_task(auto_ping_team(bot, last_team_num, team_member_objects))
+    
+    # If everyone said bingo, announce it
+    if len(missing_players) == 0 and len(missing_teams) == 0 and (active_players or active_teams):
+        print("[BINGO AUTO-PING] Everyone has said bingo! Round complete! 🎉")
+        await bot.highrise.chat("Everyone said bingo! Round complete! 🎉")
+        
+        # Check if we recorded timestamps and find the last one to say bingo
+        if bingo_timestamps or team_bingo_timestamps:
+            # Combine individual and team timestamps
+            all_timestamps = {}
+            
+            # Add individual player timestamps
+            for user_id, timestamp in bingo_timestamps.items():
+                all_timestamps[user_id] = {"timestamp": timestamp, "is_team": False}
+            
+            # Add team timestamps (use the second team member's timestamp as completion time)
+            for team_num, timestamp in team_bingo_timestamps.items():
+                # Use team number as key with special prefix to avoid collision with user IDs
+                team_key = f"team_{team_num}"
+                all_timestamps[team_key] = {"timestamp": timestamp, "is_team": True, "team_num": team_num}
+            
+            # Find the last timestamp
+            if all_timestamps:
+                last_bingo = max(all_timestamps.items(), key=lambda x: x[1]["timestamp"])
+                last_key = last_bingo[0]
+                
+                # Check if it's a team or individual player
+                if last_bingo[1]["is_team"]:
+                    team_num = last_bingo[1]["team_num"]
+                    
+                    # Get team members
+                    team_members = []
+                    team_member_objects = []
+                    for uid in teams[team_num]:
+                        for emoji, users in emoji_users.items():
+                            for user in users:
+                                if user.id == uid:
+                                    team_members.append(user.username)
+                                    team_member_objects.append(user)
+                                    break
+                    
+                    await bot.highrise.chat(f"Team {team_num} ({', '.join(team_members)}) was the last to say bingo! You lose this round!")
+                    
+                    # Start pinging team as losers
+                    for i, member in enumerate(team_member_objects):
+                        # Use team_num*100+i as unique task label
+                        task_label = team_num * 100 + i
+                        if task_label not in ping_tasks:
+                            ping_tasks[task_label] = asyncio.create_task(
+                                ping_player(bot, member, f"t{team_num}")
+                            )
+                        pinged_players.add(member.id)
+                else:
+                    # Find user from ID
+                    for p in players:
+                        if p.id == last_key:
+                            await bot.highrise.chat(f"{p.username} was the last to say bingo! You lose this round!")
+                            
+                            # Find label for player
+                            label = None
+                            for l, u in player_labels.items():
+                                if u.id == p.id:
+                                    label = l
+                                    break
+                            
+                            # Start pinging player as loser
+                            if label not in ping_tasks:
+                                ping_tasks[label] = asyncio.create_task(
+                                    ping_player(bot, p, label)
+                                )
+                            pinged_players.add(p.id)
+                            break
+        
+        # Clear timestamps for next round
+        bingo_timestamps.clear()
+        team_bingo_timestamps.clear()
+    
+    print(f"[BINGO AUTO-PING] Multiple players/teams still need to say bingo: {len(missing_players)} players, {len(missing_teams)} teams")
 
 # Celebration emote loop
 async def celebration_loop(bot, user, team_num=None):
