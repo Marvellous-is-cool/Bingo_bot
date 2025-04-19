@@ -40,6 +40,13 @@ async def announce(self: BaseBot, user_id: str, message: str) -> None:
             "- The overall team wins the prize 🏆 \n - Once the number is called, start rolling till you get the number \n - Once you get the dice, both of you will say Bingo with your favorite emoji",
             "- The emoji must be the same and must not change throughout the game 🏆"
         ],
+        "!announce reg": [
+            "**🎲 HOW TO JOIN BINGO:**",
+            "- Whisper me `hi, playing 😊` with your favorite emoji to join",
+            "- Two players using the same emoji form a team 👯‍♂️",
+            "- You must be on the bingo level (ground floor) to join",
+            "- Each player gets 5 revs - use them wisely! 🎮"
+        ],
         "!announce r1": [
             "**🎯 Welcome to Round One:**",
             "- One dice number",

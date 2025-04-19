@@ -86,7 +86,7 @@ class Bot(BaseBot):
         await self.highrise.chat("Failed to fetch room users.")
         return
       
-    # Add bingo celebration handler
+    # Add bingo celebration handler - this now also handles 'gg' and 'rev' commands
     await play_bingo.handle_bingo_celebration(self, user, message)
 
   async def on_emote(self, user: User, emote_id: str,
@@ -514,37 +514,25 @@ class Bot(BaseBot):
 
   async def on_user_leave(self, user: User) -> None:
     try:
-        # Get bot's current position
-        bot_pos = self.get_bot_position()
+        # Call the handle_user_leave function and get whether the user was a player
+        user_was_player = await play_bingo.handle_user_leave(self, user)
         
-        # Get room users to find the leaving user's last position
-        room_users = await self.highrise.get_room_users()
-        user_pos = None
-        
-        # Find the leaving user's position
-        for room_user, pos in room_users.content:
-            if user.id == room_user.id:
-                user_pos = pos
-                break
-        
-        if user_pos and abs(user_pos.y - bot_pos.y) <= 10:
-            # User was at same level (within 10 units vertically)
-            await play_bingo.handle_user_leave(self, user)
+        if user_was_player:
             await self.highrise.chat(
-                f"{user.username} left the bingo level! Hope you had fun playing with us!"
+                f"{user.username} left the game! Hope you had fun playing bingo with us!"
             )
         else:
-            # User was at a different level
             await self.highrise.chat(
-                f"{user.username} left from a different level. Come join us at the bingo level next time!"
+                f"{user.username} left the room. See you next time!"
             )
             
     except Exception as e:
-        # Fallback message if there's an error
+        print(f"[ERROR] Error in on_user_leave: {e}")
+        # Fallback message
         await self.highrise.chat(
             f"{user.username} left the room. See you next time!"
         )
-        
+
   async def on_start(self, session_metadata: SessionMetadata) -> None:
     self.bot_id = session_metadata.user_id
     self.owner_id = session_metadata.room_info.owner_id
